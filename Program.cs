@@ -31,15 +31,8 @@ namespace Man_License
                 Console.Write("Некорректный ввод. Введите числовой порт: ");
             }
 
-            // логин и пароль
-            Console.Write("Введите логин (или нажмите Enter, если без БД): ");
-            string login = Console.ReadLine();
-            Console.Write("Введите пароль (или нажмите Enter, если без БД): ");
-            string password = Console.ReadLine();
-
-            // получение уникального кода
             Console.WriteLine("\nПодключение к серверу...");
-            if (!RequestInitialToken(login, password))
+            if (!RequestInitialToken())
             {
                 Console.WriteLine("Нажмите любую клавишу для выхода...");
                 Console.ReadKey();
@@ -60,10 +53,9 @@ namespace Man_License
             Console.ReadKey();
         }
 
-        static bool RequestInitialToken(string login, string password)
+        static bool RequestInitialToken()
         {
-            string request = string.Format("CONNECT|{0}|{1}", login, password);
-            string response = SendRequest(request);
+            string response = SendRequest("CONNECT");
 
             string[] parts = response.Split('|');
             string status = parts[0];
@@ -86,12 +78,6 @@ namespace Man_License
                 Console.WriteLine("Отказ сервера: Ваш клиент находится в чёрном списке!");
                 Console.ResetColor();
             }
-            else if (status == "AUTH_FAIL")
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Отказ сервера: Неверный логин или пароль.");
-                Console.ResetColor();
-            }
             else
             {
                 Console.ForegroundColor = ConsoleColor.Red;
@@ -103,6 +89,113 @@ namespace Man_License
 
             return false;
         }
-        
+
+        static void PeriodicServerCheck()
+        {
+            int secondsCounter = 0;
+
+            while (isRunning)
+            {
+                Thread.Sleep(5000);
+                secondsCounter += 5;
+
+                string checkResponse = SendRequest("CHECK|" + uniqueToken);
+                string[] parts = checkResponse.Split('|');
+
+                if (parts[0] == "BLOCKED" || parts[0] == "BLACKLISTED")
+                {
+                    isRunning = false;
+                    Console.Clear();
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("ВНИМАНИЕ: Клиент заблокирован сервером (добавлен в чёрный список)!");
+                    Console.ResetColor();
+                    break;
+                }
+                else if (parts[0] == "KICKED")
+                {
+                    isRunning = false;
+                    Console.Clear();
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine("ВНИМАНИЕ: Сервер разорвал подключение.");
+                    Console.ResetColor();
+                    break;
+                }
+                else if (parts[0] == "EXPIRED" || secondsCounter >= 20)
+                {
+                    secondsCounter = 0;
+                    string renewResponse = SendRequest("RENEW|" + uniqueToken);
+                    string[] renewParts = renewResponse.Split('|');
+
+                    if (renewParts[0] == "NEW_TOKEN" && renewParts.Length > 1)
+                    {
+                        uniqueToken = renewParts[1];
+                    }
+                    else
+                    {
+                        isRunning = false;
+                        Console.Clear();
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("Не удалось обновить уникальный код. Ответ сервера: " + renewResponse);
+                        Console.ResetColor();
+                        break;
+                    }
+                }
+            }
+        }
+
+        static void PrintClientInfo()
+        {
+            if (!isRunning) return;
+
+            TimeSpan duration = DateTime.Now - connectionStartTime;
+
+            Console.Clear();
+            Console.WriteLine("=== КЛИЕНТ МЕНЕДЖЕРА ЛИЦЕНЗИЙ (АКТИВЕН) ===");
+            Console.WriteLine("Адрес сервера:               {0}:{1}", serverIp, serverPort);
+            Console.WriteLine("-------------------------------------------");
+            Console.WriteLine("Дата и время подключения:    {0:dd.MM.yyyy HH:mm:ss}", connectionStartTime);
+            Console.WriteLine("Продолжительность сессии:    {0:hh\\:mm\\:ss}", duration);
+            Console.WriteLine("IP-адрес клиента:            {0}", localIp);
+            Console.WriteLine("Порт клиента:                {0}", localPort);
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("Уникальный код подключения:  {0}", uniqueToken);
+            Console.ResetColor();
+            Console.WriteLine("-------------------------------------------");
+            Console.WriteLine("Статус: Подключено. Автоматическая проверка активна...");
+        }
+
+        static string SendRequest(string message)
+        {
+            try
+            {
+                using (TcpClient client =
+
+                    new TcpClient())
+                {
+                    client.Connect(serverIp, serverPort);
+
+                    IPEndPoint localEndPoint = (IPEndPoint)client.Client.LocalEndPoint;
+                    localIp = localEndPoint.Address.ToString();
+                    if (localPort == 0)
+                    {
+                        localPort = localEndPoint.Port;
+                    }
+
+                    using (NetworkStream stream = client.GetStream())
+                    {
+                        byte[] data = Encoding.UTF8.GetBytes(message);
+                        stream.Write(data, 0, data.Length);
+
+                        byte[] buffer = new byte[1024];
+                        int bytesRead = stream.Read(buffer, 0, buffer.Length);
+                        return Encoding.UTF8.GetString(buffer, 0, bytesRead).Trim();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return "ERROR|" + ex.Message;
+            }
+        }
     }
 }
