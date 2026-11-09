@@ -60,6 +60,49 @@ namespace Man_License
             Console.ReadKey();
         }
 
+        static bool RequestInitialToken(string login, string password)
+        {
+            string request = string.Format("CONNECT|{0}|{1}", login, password);
+            string response = SendRequest(request);
+
+            string[] parts = response.Split('|');
+            string status = parts[0];
+
+            if (status == "OK" && parts.Length > 1)
+            {
+                uniqueToken = parts[1];
+                connectionStartTime = DateTime.Now;
+                return true;
+            }
+            else if (status == "NO_SLOTS")
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("Отказ сервера: Нет свободных мест для лицензирования.");
+                Console.ResetColor();
+            }
+            else if (status == "BLACKLISTED")
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("Отказ сервера: Ваш клиент находится в чёрном списке!");
+                Console.ResetColor();
+            }
+            else if (status == "AUTH_FAIL")
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("Отказ сервера: Неверный логин или пароль.");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("Ошибка подключения к серверу: " + response);
+
+
+                Console.ResetColor();
+            }
+
+            return false;
+        }
         
     }
 }
