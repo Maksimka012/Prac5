@@ -61,7 +61,10 @@ namespace Server
                     foreach (var client in active)
                     {
                         TimeSpan duration = DateTime.Now - client.ConnectTime;
-                        Console.WriteLine($"Код: {client.Token} | IP: {client.Ip}:{client.Port} | Вход: {client.ConnectTime:HH:mm:ss} | Длительность: {duration:HH:mm:ss}");
+                        string connectStr = client.ConnectTime.ToString("dd.MM.yyyy HH:mm:ss");
+                        string durationStr = duration.ToString(@"hh\:mm\:ss");
+
+                        Console.WriteLine($"Код: {client.Token} | IP: {client.Ip}:{client.Port} | Вход: {connectStr} | Длительность: {durationStr}");
                     }
                 }
                 else if (cmd[0] == "kick" && cmd.Length > 1)
