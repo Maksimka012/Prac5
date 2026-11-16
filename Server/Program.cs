@@ -90,18 +90,72 @@ namespace Server
         {
             while (true)
             {
+
+
                 using (TcpClient client = server.AcceptTcpClient())
                 using (NetworkStream stream = client.GetStream())
                 {
                     IPEndPoint ep = (IPEndPoint)client.Client.RemoteEndPoint;
-                    byte[] buffer = new byte[1024];
-                    int len = stream.Read(buffer, 0, buffer.Length);
-                    string req = Encoding.UTF8.GetString(buffer, 0, len).Trim();
+                    byte[] buf = new byte[1024];
+                    int len = stream.Read(buf, 0, buf.Length);
+                    string req = Encoding.UTF8.GetString(buf, 0, len).Trim();
+
                     string resp = ProcessRequest(req, ep.Address.ToString(), ep.Port);
                     byte[] data = Encoding.UTF8.GetBytes(resp);
                     stream.Write(data, 0, data.Length);
                 }
             }
+        }
+
+        static string ProcessRequest(string req, string ip, int port)
+        {
+            string[] parts = req.Split('|');
+            string cmd = parts[0];
+
+            if (blacklist.Contains(ip)) return "BLACKLISTED";
+
+            if (cmd == "CONNECT")
+            {
+                if (clients.Count(x => !x.isKicked) >= maxClient)
+                    return "NO_SLOTS";
+
+                string token = Guid.NewGuid().ToString().Substring(0, 8);
+                clients.Add(new ClientSession
+                {
+                    Token = token,
+                    Ip = ip,
+                    Port = port,
+                    ConnectTime = DateTime.Now,
+                    TokenCreatedTime = DateTime.Now
+                });
+                Console.WriteLine($"[+] Подключился клиент {ip}:{port} -> Код: {token}");
+                return "OK|" + token;
+            }
+            else if (cmd == "CHECK" && parts.Length > 1)
+            {
+                string token = parts[1];
+                if (blacklist.Contains(token)) return "BLACKLISTED";
+
+                var c = clients.FirstOrDefault(x => x.Token == token);
+                if (c == null || c.isKicked) return "KICKED";
+
+                if ((DateTime.Now - c.TokenCreatedTime).TotalSeconds >= tokenLifetimeSec)
+                    return "EXPIRED";
+
+                return "ACTIVE";
+            }
+            else if (cmd == "RENEW" && parts.Length > 1)
+            {
+                var c = clients.FirstOrDefault(x => x.Token == parts[1] && !x.isKicked);
+                if (c == null) return "KICKED";
+
+                c.Token = Guid.NewGuid().ToString().Substring(0, 8);
+                c.TokenCreatedTime = DateTime.Now;
+                Console.WriteLine($"[~] Обновлен код для {c.Ip}:{c.Port} -> Новый код: {c.Token}");
+                return "NEW_TOKEN|" + c.Token;
+            }
+
+            return "ERROR";
         }
     }
 }
